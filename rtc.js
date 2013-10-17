@@ -1,5 +1,5 @@
 // create socket
-var socket = io.connect('http://' + window.location.host + ':8080/');
+var socket = io.connect('http://' + window.location.hostname + ':8080/');
 
 var sourcevid = document.getElementById('sourcevideo');
 var remotevid = document.getElementById('remotevideo');
@@ -14,19 +14,26 @@ var isVideoMuted = false;
 
 // show the local video
 function startVideo() {
+    navigator.getUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia || window.navigator.mozGetUserMedia || navigator.msGetUserMedia;
+    window.URL = window.URL || window.webkitURL;
 
-    navigator.webkitGetUserMedia({video: true, audio: true}, successCallback, errorCallback);
+    navigator.getUserMedia({video: true, audio: true}, successCallback, errorCallback);
     function successCallback(stream) {
         localStream = stream;
-        try {
-            sourcevid.src = window.URL.createObjectURL(stream);
+        if (sourcevid.mozSrcObject) {
+            sourcevid.mozSrcObject = stream;
             sourcevid.play();
-        } catch (e) {
-            console.log("Error setting video src: ", e);
+        } else {
+            try {
+              sourcevid.src = window.URL.createObjectURL(stream);
+              sourcevid.play();
+            } catch(e) {
+              console.log("Error setting video src: ", e);
+            }
         }
-
     }
     function errorCallback(error) {
+        console.error(error);
         console.error('An error occurred: [CODE ' + error.code + ']');
         return;
     }
@@ -34,8 +41,13 @@ function startVideo() {
 
 // stop local video
 function stopVideo() {
-    sourcevid.src = "";
-    localStream.stop();
+    if (sourcevid.mozSrcObject) {
+        sourcevid.mozSrcObject.stop();
+        sourcevid.src = null;
+    } else {
+        sourcevid.src = "";
+        localStream.stop();
+    }
 }
 
 // send SDP via socket connection
@@ -120,15 +132,16 @@ function onMessage(evt) {
 
 function createPeerConnection() {
     console.log("Creating peer connection");
-    var pc_config = {"iceServers": []};
+    RTCPeerConnection = webkitRTCPeerConnection || mozRTCPeerConnection;
+    var pc_config = {"iceServers":[]};
     try {
-        peerConn = new webkitRTCPeerConnection(pc_config);
+        peerConn = new RTCPeerConnection(pc_config);
     } catch (e) {
         console.log("Failed to create PeerConnection, exception: " + e.message);
     }
     // send any ice candidates to the other peer
     peerConn.onicecandidate = function(evt) {
-        if (event.candidate) {
+        if (evt.candidate) {
             console.log('Sending ICE candidate...');
             console.log(evt.candidate);
             socket.json.send({type: "candidate",
